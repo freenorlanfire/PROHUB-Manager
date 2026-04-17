@@ -1,0 +1,8 @@
+<Solution>
+  <Project Path="frontend/frontend.esproj">
+    <Build />
+    <Deploy />
+  </Project>
+  <Project Path="PROHUB.API.AppHost/PROHUB.API.AppHost.csproj" />
+  <Project Path="PROHUB.API.Server/PROHUB.API.Server.csproj" />
+</Solution>
