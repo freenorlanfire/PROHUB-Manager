@@ -125,15 +125,27 @@ builder.Services.AddSwaggerGen(c =>
 });
 
 // ── CORS ──────────────────────────────────────────────────────────────────────────
-var allowedOrigins = builder.Configuration
-    .GetSection("Cors:AllowedOrigins")
-    .Get<string[]>()
-    ?? ["http://localhost:5173", "http://localhost:3000", "http://localhost:5534"];
+// En dev: permite cualquier localhost (Vite usa puertos dinámicos).
+// En prod: usa la lista de ALLOWED_ORIGINS env var o la configuración.
+if (builder.Environment.IsDevelopment())
+{
+    builder.Services.AddCors(opt => opt.AddPolicy("Frontend", policy =>
+        policy.SetIsOriginAllowed(origin =>
+               new Uri(origin).Host is "localhost" or "127.0.0.1")
+              .AllowAnyMethod()
+              .AllowAnyHeader()));
+}
+else
+{
+    var allowedOrigins = builder.Configuration
+        .GetSection("Cors:AllowedOrigins").Get<string[]>()
+        ?? [builder.Configuration["RAILWAY_PUBLIC_DOMAIN"] is string d ? $"https://{d}" : ""];
 
-builder.Services.AddCors(opt => opt.AddPolicy("Frontend", policy =>
-    policy.WithOrigins(allowedOrigins)
-          .AllowAnyMethod()
-          .AllowAnyHeader()));
+    builder.Services.AddCors(opt => opt.AddPolicy("Frontend", policy =>
+        policy.WithOrigins(allowedOrigins.Where(o => !string.IsNullOrEmpty(o)).ToArray())
+              .AllowAnyMethod()
+              .AllowAnyHeader()));
+}
 
 builder.Services.AddProblemDetails();
 
