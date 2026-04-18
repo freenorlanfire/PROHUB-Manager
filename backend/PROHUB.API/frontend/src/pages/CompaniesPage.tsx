@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { companiesApi } from '../api/companies';
 import type { Company } from '../api/types';
+import { useToast } from '../context/ToastContext';
 
 interface Props {
   onSelectCompany: (id: string, name: string) => void;
@@ -17,6 +18,7 @@ export function CompaniesPage({ onSelectCompany }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [modal, setModal] = useState<ModalState>({ mode: 'closed' });
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const { success, error: toastError } = useToast();
 
   useEffect(() => { load(); }, []);
 
@@ -39,6 +41,9 @@ export function CompaniesPage({ onSelectCompany }: Props) {
     if (res.ok) {
       setCompanies(prev => prev.filter(c => c.id !== id));
       setDeleteConfirm(null);
+      success('Company deleted.');
+    } else {
+      toastError(res.error ?? 'Failed to delete company.');
     }
   }
 
@@ -130,7 +135,7 @@ export function CompaniesPage({ onSelectCompany }: Props) {
         <CompanyModal
           initial={modal.mode === 'edit' ? modal.company : undefined}
           onClose={() => setModal({ mode: 'closed' })}
-          onSaved={() => { setModal({ mode: 'closed' }); load(); }}
+          onSaved={(msg) => { setModal({ mode: 'closed' }); load(); success(msg); }}
         />
       )}
     </div>
@@ -140,7 +145,7 @@ export function CompaniesPage({ onSelectCompany }: Props) {
 interface CompanyModalProps {
   initial?: Company;
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: (msg: string) => void;
 }
 
 function CompanyModal({ initial, onClose, onSaved }: CompanyModalProps) {
@@ -166,8 +171,11 @@ function CompanyModal({ initial, onClose, onSaved }: CompanyModalProps) {
       ? await companiesApi.update(initial.id, body)
       : await companiesApi.create(body);
 
-    if (res.ok) onSaved();
-    else setError(res.error ?? 'Failed to save.');
+    if (res.ok) {
+      onSaved(initial ? 'Company updated successfully.' : 'Company created successfully.');
+    } else {
+      setError(res.error ?? 'Failed to save.');
+    }
     setSaving(false);
   }
 

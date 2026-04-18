@@ -1,11 +1,14 @@
 using System.Text;
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using PROHUB.API.Server.Common;
 using PROHUB.API.Server.Data;
 using PROHUB.API.Server.Endpoints;
+using PROHUB.API.Server.Middleware;
 using PROHUB.API.Server.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -56,6 +59,43 @@ builder.Services
 
 builder.Services.AddAuthorization();
 
+// ── Response Compression ──────────────────────────────────────────────────────────
+builder.Services.AddResponseCompression(opts =>
+{
+    opts.EnableForHttps = true;
+});
+
+// ── Rate Limiting ─────────────────────────────────────────────────────────────────
+builder.Services.AddRateLimiter(opt =>
+{
+    // Global fixed window - 200 requests/min per IP
+    opt.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(ctx =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: ctx.Connection.RemoteIpAddress?.ToString() ?? "anon",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 200,
+                Window = TimeSpan.FromMinutes(1),
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                QueueLimit = 10
+            }));
+
+    // Auth endpoints stricter - 10 attempts/min
+    opt.AddFixedWindowLimiter("auth", o =>
+    {
+        o.PermitLimit = 10;
+        o.Window = TimeSpan.FromMinutes(1);
+        o.QueueLimit = 0;
+    });
+
+    opt.OnRejected = async (ctx, token) =>
+    {
+        ctx.HttpContext.Response.StatusCode = 429;
+        await ctx.HttpContext.Response.WriteAsJsonAsync(
+            new { ok = false, data = (object?)null, error = "Too many requests. Please slow down." }, token);
+    };
+});
+
 // ── Swagger / OpenAPI ─────────────────────────────────────────────────────────────
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
@@ -101,8 +141,22 @@ builder.Services.AddProblemDetails();
 var app = builder.Build();
 // ─────────────────────────────────────────────────────────────────────────────────
 
+app.UseResponseCompression();
+
 app.UseExceptionHandler();
 app.UseCors("Frontend");
+
+// ── Request timing ────────────────────────────────────────────────────────────────
+app.Use(async (ctx, next) =>
+{
+    var sw = System.Diagnostics.Stopwatch.StartNew();
+    ctx.Response.OnStarting(() =>
+    {
+        ctx.Response.Headers["X-Response-Time-Ms"] = sw.ElapsedMilliseconds.ToString();
+        return Task.CompletedTask;
+    });
+    await next();
+});
 
 app.Use(async (ctx, next) =>
 {
@@ -110,8 +164,13 @@ app.Use(async (ctx, next) =>
     await next();
 });
 
+app.UseRateLimiter();
+
 app.UseAuthentication();
 app.UseAuthorization();
+
+// ── Audit logging ─────────────────────────────────────────────────────────────────
+app.UseAuditLogging();
 
 // ── Swagger ───────────────────────────────────────────────────────────────────────
 app.UseSwagger();
@@ -140,8 +199,22 @@ using (var scope = app.Services.CreateScope())
 
 // ── Health — SIEMPRE público, sin auth ───────────────────────────────────────────
 // El AppHost lo usa para saber si el server está listo.
-app.MapGet("/health", () => Results.Ok(new { status = "healthy" }))
-   .ExcludeFromDescription();
+app.MapGet("/health", async (ProhubDbContext db) =>
+{
+    try
+    {
+        await db.Database.CanConnectAsync();
+        return Results.Ok(new { status = "healthy", db = "connected", ts = DateTime.UtcNow });
+    }
+    catch
+    {
+        return Results.Ok(new { status = "degraded", db = "unavailable", ts = DateTime.UtcNow });
+    }
+}).ExcludeFromDescription().AllowAnonymous();
+
+// Simple ping for AppHost probe (no DB required)
+app.MapGet("/health/ping", () => Results.Ok(new { status = "healthy" }))
+   .ExcludeFromDescription().AllowAnonymous();
 
 app.MapGet("/api/health", () => Results.Ok(ApiResponse<object>.Success(new
 {
