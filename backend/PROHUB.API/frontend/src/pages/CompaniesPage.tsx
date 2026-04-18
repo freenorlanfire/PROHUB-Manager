@@ -23,10 +23,15 @@ export function CompaniesPage({ onSelectCompany }: Props) {
   async function load() {
     setLoading(true);
     setError(null);
-    const res = await companiesApi.list();
-    if (res.ok && res.data) setCompanies(res.data);
-    else setError(res.error ?? 'Failed to load companies');
-    setLoading(false);
+    try {
+      const res = await companiesApi.list();
+      if (res.ok && res.data) setCompanies(res.data);
+      else setError(res.error ?? 'Failed to load companies');
+    } catch (e) {
+      setError(`Network error: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function handleDelete(id: string) {

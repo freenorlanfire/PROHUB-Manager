@@ -6,10 +6,11 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      // Proxy API calls to the app service
       '/api': {
-        target: process.env.SERVER_HTTPS || process.env.SERVER_HTTP || 'http://localhost:5534',
-        changeOrigin: true
+        // Aspire injects SERVER_HTTPS or SERVER_HTTP; prefer HTTP to avoid self-signed cert issues
+        target: process.env.SERVER_HTTP || process.env.SERVER_HTTPS || 'http://localhost:5534',
+        changeOrigin: true,
+        secure: false,        // accept self-signed dev certs if HTTPS is used
       }
     }
   }
