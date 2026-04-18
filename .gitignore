@@ -12,6 +12,9 @@ out/
 *.userosscache
 *.sln.docstates
 
+# Claude Code session data
+.claude/
+
 # Node
 node_modules/
 npm-debug.log*
