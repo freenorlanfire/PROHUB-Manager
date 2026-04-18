@@ -121,6 +121,23 @@ app.UseSwaggerUI(c =>
     c.RoutePrefix = "swagger";
 });
 
+// ── Auto-migrate DB ───────────────────────────────────────────────────────────────
+// Aplica pendientes al arrancar (dev + prod). Idempotente y seguro.
+using (var scope = app.Services.CreateScope())
+{
+    var db     = scope.ServiceProvider.GetRequiredService<ProhubDbContext>();
+    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+    try
+    {
+        await db.Database.MigrateAsync();
+        logger.LogInformation("[DB] Migraciones aplicadas correctamente.");
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "[DB] Error al aplicar migraciones. La app seguirá, pero puede fallar.");
+    }
+}
+
 // ── Health — SIEMPRE público, sin auth ───────────────────────────────────────────
 // El AppHost lo usa para saber si el server está listo.
 app.MapGet("/health", () => Results.Ok(new { status = "healthy" }))
@@ -152,8 +169,7 @@ app.UseDefaultFiles();
 app.UseStaticFiles();
 app.MapFallbackToFile("index.html");
 
-// ── Dev seed (NO-FATAL: si no hay DB local, avisa y sigue arrancando) ────────────
-if (app.Environment.IsDevelopment())
+// ── Seed inicial (dev + prod) — solo crea el admin si no existe ningún usuario ────
 {
     var seedLogger = app.Services.GetRequiredService<ILogger<Program>>();
     try
@@ -164,7 +180,7 @@ if (app.Environment.IsDevelopment())
     {
         seedLogger.LogWarning(
             "[Seed] No se pudo conectar a la BD. El servidor arranca igual. " +
-            "Inicia Postgres y reinicia para crear el usuario dev. Error: {Msg}",
+            "Reinicia para crear el usuario admin. Error: {Msg}",
             ex.Message);
     }
 }

@@ -985,6 +985,36 @@ select.input option { background: var(--surface-2); }
   border-radius: var(--radius-sm);
 }
 
+/* ── Password visibility toggle ──────────────────────────────────── */
+
+.input-pwd-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.input-pwd-wrap .input {
+  width: 100%;
+  padding-right: 2.5rem;
+}
+
+.pwd-toggle {
+  position: absolute;
+  right: 0.625rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  padding: 0;
+  display: flex;
+  align-items: center;
+  transition: color 0.15s;
+}
+
+.pwd-toggle:hover {
+  color: var(--orange);
+}
+
 /* ── Boot screen ─────────────────────────────────────────────────── */
 
 .boot-screen {
