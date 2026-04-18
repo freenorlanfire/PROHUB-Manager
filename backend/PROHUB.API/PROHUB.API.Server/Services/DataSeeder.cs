@@ -7,68 +7,77 @@ namespace PROHUB.API.Server.Services;
 public static class DataSeeder
 {
     /// <summary>
-    /// Idempotent dev seed: creates one company + admin user + membership.
-    /// Only runs in Development environment.
-    /// Credentials: admin@prohub.dev / Admin123!
+    /// Idempotent seed: creates one company + two admin users + memberships.
+    /// Skips everything if admin@prohub.dev already exists.
+    /// Credentials: admin@prohub.dev / Admin123!  |  norlan@prohub.dev / Admin123!
     /// </summary>
     public static async Task SeedAsync(IServiceProvider services, ILogger logger)
     {
         await using var scope = services.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<ProhubDbContext>();
+        var db   = scope.ServiceProvider.GetRequiredService<ProhubDbContext>();
         var auth = scope.ServiceProvider.GetRequiredService<AuthService>();
 
-        const string devEmail = "admin@prohub.dev";
-        const string devPassword = "Admin123!";
+        const string email1    = "admin@prohub.dev";
+        const string email2    = "norlan@prohub.dev";
+        const string password  = "Admin123!";
 
-        if (await db.Users.AnyAsync(u => u.Email == devEmail))
+        // Idempotent: skip if primary seed user already exists
+        if (await db.Users.AnyAsync(u => u.Email == email1))
         {
-            logger.LogInformation("[Seed] Dev user already exists — skipping.");
+            logger.LogInformation("[Seed] Users already seeded — skipping.");
             return;
         }
 
-        logger.LogInformation("[Seed] Creating dev user and company...");
+        logger.LogInformation("[Seed] Creating company and admin users...");
 
         var now = DateTime.UtcNow;
 
         var company = new Company
         {
-            Id = Guid.NewGuid(),
-            Name = "PROHUB Dev",
-            Slug = "prohub-dev",
-            Description = "Auto-seeded development company",
-            CreatedAtUtc = now,
-            UpdatedAtUtc = now,
-            IsDeleted = false
+            Id            = Guid.NewGuid(),
+            Name          = "PROHUB Dev",
+            Slug          = "prohub-dev",
+            Description   = "Auto-seeded company",
+            CreatedAtUtc  = now,
+            UpdatedAtUtc  = now,
+            IsDeleted     = false
         };
 
-        var user = new User
+        var admin = new User
         {
-            Id = Guid.NewGuid(),
-            Email = devEmail,
-            Name = "Admin",
-            PasswordHash = auth.HashPassword(devPassword),
-            Role = "owner",
+            Id           = Guid.NewGuid(),
+            Email        = email1,
+            Name         = "Admin",
+            PasswordHash = auth.HashPassword(password),
+            Role         = "owner",
             CreatedAtUtc = now,
             UpdatedAtUtc = now,
-            IsDeleted = false
+            IsDeleted    = false
         };
 
-        var membership = new Membership
+        var norlan = new User
         {
-            Id = Guid.NewGuid(),
-            CompanyId = company.Id,
-            UserId = user.Id,
-            Role = "owner",
-            CreatedAtUtc = now
+            Id           = Guid.NewGuid(),
+            Email        = email2,
+            Name         = "Norlan",
+            PasswordHash = auth.HashPassword(password),
+            Role         = "owner",
+            CreatedAtUtc = now,
+            UpdatedAtUtc = now,
+            IsDeleted    = false
         };
 
         db.Companies.Add(company);
-        db.Users.Add(user);
-        db.Memberships.Add(membership);
+        db.Users.AddRange(admin, norlan);
+        db.Memberships.AddRange(
+            new Membership { Id = Guid.NewGuid(), CompanyId = company.Id, UserId = admin.Id,  Role = "owner", CreatedAtUtc = now },
+            new Membership { Id = Guid.NewGuid(), CompanyId = company.Id, UserId = norlan.Id, Role = "owner", CreatedAtUtc = now }
+        );
+
         await db.SaveChangesAsync();
 
         logger.LogInformation(
-            "[Seed] Done. Login → email: {Email} | password: {Password} | companyId: {CompanyId}",
-            devEmail, devPassword, company.Id);
+            "[Seed] Done — company: {Company} | users: {E1}, {E2} | password: {Pwd}",
+            company.Name, email1, email2, password);
     }
 }
