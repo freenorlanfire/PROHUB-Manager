@@ -43,6 +43,10 @@ builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
+        // ⚠️ CRÍTICO: evita que el middleware mapee 'sub' → ClaimTypes.NameIdentifier
+        // Sin esto, user.FindFirstValue(JwtRegisteredClaimNames.Sub) devuelve null → 500
+        options.MapInboundClaims = false;
+
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer           = true,
@@ -53,7 +57,8 @@ builder.Services
             ValidAudience            = jwtSettings.Audience,
             IssuerSigningKey         = new SymmetricSecurityKey(
                                            Encoding.UTF8.GetBytes(jwtSettings.Key)),
-            ClockSkew = TimeSpan.FromSeconds(30)
+            ClockSkew = TimeSpan.FromSeconds(30),
+            NameClaimType = "sub",
         };
     });
 
