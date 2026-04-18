@@ -1,7 +1,7 @@
 var builder = DistributedApplication.CreateBuilder(args);
 
 var server = builder.AddProject<Projects.PROHUB_API_Server>("server")
-    .WithHttpHealthCheck("/health")
+    .WithHttpHealthCheck("/health")   // responde SIEMPRE, sin DB, sin auth
     .WithExternalHttpEndpoints();
 
 var webfrontend = builder.AddViteApp("webfrontend", "../frontend")

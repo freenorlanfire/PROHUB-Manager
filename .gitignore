@@ -1,0 +1,36 @@
+# Build outputs
+bin/
+obj/
+dist/
+out/
+
+# VS / Rider
+.vs/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Node
+node_modules/
+npm-debug.log*
+.npm
+
+# .NET user secrets (credentials — NUNCA al repo)
+**/secrets.json
+
+# Environment / credenciales
+.env
+.env.local
+.env.*.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Rider
+*.DotSettings.user

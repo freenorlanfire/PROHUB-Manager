@@ -1,41 +1,172 @@
+using System.Text;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi.Models;
+using PROHUB.API.Server.Common;
+using PROHUB.API.Server.Data;
+using PROHUB.API.Server.Endpoints;
+using PROHUB.API.Server.Services;
+
 var builder = WebApplication.CreateBuilder(args);
 
-// Add service defaults & Aspire client integrations.
+// ── Aspire service defaults (OpenTelemetry — safe standalone; OTLP solo si hay endpoint) ──
 builder.AddServiceDefaults();
 
-// Add services to the container.
+// ── Database ──────────────────────────────────────────────────────────────────────
+var connectionString = builder.Configuration.GetConnectionString("Prohub")
+    ?? throw new InvalidOperationException(
+        "Connection string 'Prohub' not found. " +
+        "Define ConnectionStrings__Prohub en env var o appsettings.Development.json.");
+
+builder.Services.AddDbContext<ProhubDbContext>(options =>
+    options
+        .UseNpgsql(connectionString)
+        .UseSnakeCaseNamingConvention()
+        .EnableSensitiveDataLogging(builder.Environment.IsDevelopment()));
+
+// ── JWT ───────────────────────────────────────────────────────────────────────────
+var jwtSettings = builder.Configuration.GetSection("Jwt").Get<JwtSettings>()
+    ?? throw new InvalidOperationException(
+        "Jwt settings not found. Define Jwt__Key / Jwt__Issuer / Jwt__Audience.");
+
+if (jwtSettings.Key.Length < 32)
+    throw new InvalidOperationException("Jwt:Key debe tener al menos 32 caracteres.");
+
+builder.Services.AddSingleton(jwtSettings);
+builder.Services.AddScoped<AuthService>();
+
+builder.Services
+    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer           = true,
+            ValidateAudience         = true,
+            ValidateLifetime         = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer              = jwtSettings.Issuer,
+            ValidAudience            = jwtSettings.Audience,
+            IssuerSigningKey         = new SymmetricSecurityKey(
+                                           Encoding.UTF8.GetBytes(jwtSettings.Key)),
+            ClockSkew = TimeSpan.FromSeconds(30)
+        };
+    });
+
+builder.Services.AddAuthorization();
+
+// ── Swagger / OpenAPI ─────────────────────────────────────────────────────────────
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(c =>
+{
+    c.SwaggerDoc("v1", new() { Title = "PROHUB Manager API", Version = "v1" });
+
+    var bearer = new OpenApiSecurityScheme
+    {
+        In          = ParameterLocation.Header,
+        Description = "Introduce: Bearer {tu JWT}",
+        Name        = "Authorization",
+        Type        = SecuritySchemeType.ApiKey,
+        Scheme      = "Bearer"
+    };
+    c.AddSecurityDefinition("Bearer", bearer);
+    c.AddSecurityRequirement(new OpenApiSecurityRequirement
+    {
+        {
+            new OpenApiSecurityScheme
+            {
+                Reference = new OpenApiReference
+                    { Type = ReferenceType.SecurityScheme, Id = "Bearer" }
+            },
+            Array.Empty<string>()
+        }
+    });
+});
+
+// ── CORS ──────────────────────────────────────────────────────────────────────────
+var allowedOrigins = builder.Configuration
+    .GetSection("Cors:AllowedOrigins")
+    .Get<string[]>()
+    ?? ["http://localhost:5173", "http://localhost:3000", "http://localhost:5534"];
+
+builder.Services.AddCors(opt => opt.AddPolicy("Frontend", policy =>
+    policy.WithOrigins(allowedOrigins)
+          .AllowAnyMethod()
+          .AllowAnyHeader()));
+
 builder.Services.AddProblemDetails();
 
+// ─────────────────────────────────────────────────────────────────────────────────
 var app = builder.Build();
+// ─────────────────────────────────────────────────────────────────────────────────
 
-// Configure the HTTP request pipeline.
 app.UseExceptionHandler();
+app.UseCors("Frontend");
 
-
-string[] summaries = ["Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"];
-
-var api = app.MapGroup("/api");
-api.MapGet("weatherforecast", () =>
+app.Use(async (ctx, next) =>
 {
-    var forecast = Enumerable.Range(1, 5).Select(index =>
-        new WeatherForecast
-        (
-            DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-            Random.Shared.Next(-20, 55),
-            summaries[Random.Shared.Next(summaries.Length)]
-        ))
-        .ToArray();
-    return forecast;
-})
-.WithName("GetWeatherForecast");
+    ctx.Response.Headers["X-Request-Id"] = ctx.TraceIdentifier;
+    await next();
+});
 
+app.UseAuthentication();
+app.UseAuthorization();
+
+// ── Swagger ───────────────────────────────────────────────────────────────────────
+app.UseSwagger();
+app.UseSwaggerUI(c =>
+{
+    c.SwaggerEndpoint("/swagger/v1/swagger.json", "PROHUB Manager API v1");
+    c.RoutePrefix = "swagger";
+});
+
+// ── Health — SIEMPRE público, sin auth ───────────────────────────────────────────
+// El AppHost lo usa para saber si el server está listo.
+app.MapGet("/health", () => Results.Ok(new { status = "healthy" }))
+   .ExcludeFromDescription();
+
+app.MapGet("/api/health", () => Results.Ok(ApiResponse<object>.Success(new
+{
+    status      = "healthy",
+    version     = "1.0.0",
+    timestamp   = DateTime.UtcNow,
+    environment = app.Environment.EnvironmentName
+}))).WithTags("Health").ExcludeFromDescription();
+
+// ── API endpoints ─────────────────────────────────────────────────────────────────
+app.MapAuthEndpoints();
+app.MapCompanyEndpoints();
+app.MapProjectEndpoints();
+app.MapStatusEndpoints();
+app.MapContextDocEndpoints();
+app.MapIntegrationEndpoints();
+app.MapTagEndpoints();
+app.MapLinkEndpoints();
+
+// ── Aspire probes (/alive) ────────────────────────────────────────────────────────
 app.MapDefaultEndpoints();
 
-app.UseFileServer();
+// ── Serve React SPA (wwwroot en producción) ───────────────────────────────────────
+app.UseDefaultFiles();
+app.UseStaticFiles();
+app.MapFallbackToFile("index.html");
+
+// ── Dev seed (NO-FATAL: si no hay DB local, avisa y sigue arrancando) ────────────
+if (app.Environment.IsDevelopment())
+{
+    var seedLogger = app.Services.GetRequiredService<ILogger<Program>>();
+    try
+    {
+        await DataSeeder.SeedAsync(app.Services, seedLogger);
+    }
+    catch (Exception ex)
+    {
+        seedLogger.LogWarning(
+            "[Seed] No se pudo conectar a la BD. El servidor arranca igual. " +
+            "Inicia Postgres y reinicia para crear el usuario dev. Error: {Msg}",
+            ex.Message);
+    }
+}
 
 app.Run();
-
-record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
-{
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
-}
