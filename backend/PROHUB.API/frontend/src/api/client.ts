@@ -74,6 +74,9 @@ export const api = {
   put: <T>(path: string, body: unknown, companyId?: string) =>
     request<T>(path, { method: 'PUT', body: JSON.stringify(body), companyId }),
 
+  patch: <T>(path: string, body: unknown, companyId?: string) =>
+    request<T>(path, { method: 'PATCH', body: JSON.stringify(body), companyId }),
+
   del: <T>(path: string, companyId?: string) =>
     request<T>(path, { method: 'DELETE', companyId }),
 };

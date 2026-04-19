@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { projectsApi } from '../api/projects';
+import { useToast } from '../context/ToastContext';
 import type { Project } from '../api/types';
 
 interface Props {
@@ -16,6 +17,7 @@ export function ProjectsPage({ companyId, companyName, onSelectProject }: Props)
   const [error, setError] = useState<string | null>(null);
   const [modal, setModal] = useState<ModalState>({ mode: 'closed' });
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const { success, error: toastError } = useToast();
 
   useEffect(() => { load(); }, [companyId]);
 
@@ -30,12 +32,23 @@ export function ProjectsPage({ companyId, companyName, onSelectProject }: Props)
 
   async function handleDelete(id: string) {
     const res = await projectsApi.delete(id);
-    if (res.ok) { setProjects(prev => prev.filter(p => p.id !== id)); setDeleteConfirm(null); }
+    if (res.ok) {
+      setProjects(prev => prev.filter(p => p.id !== id));
+      setDeleteConfirm(null);
+      success('Project deleted.');
+    } else {
+      toastError(res.error ?? 'Failed to delete project.');
+    }
   }
 
   async function handleArchive(id: string) {
     const res = await projectsApi.archive(id);
-    if (res.ok && res.data) setProjects(prev => prev.map(p => p.id === id ? res.data! : p));
+    if (res.ok && res.data) {
+      setProjects(prev => prev.map(p => p.id === id ? res.data! : p));
+      success('Project archived.');
+    } else {
+      toastError(res.error ?? 'Failed to archive project.');
+    }
   }
 
   return (

@@ -51,6 +51,7 @@ function AppRoutes() {
         <ProjectDetailPage
           projectId={route.projectId}
           companyId={route.companyId}
+          onBack={() => navProjects(route.companyId, route.companyName)}
         />
       )}
       {route.page === 'settings' && <SettingsPage />}

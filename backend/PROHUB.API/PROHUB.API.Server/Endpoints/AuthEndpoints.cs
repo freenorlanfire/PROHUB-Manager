@@ -19,6 +19,8 @@ public static class AuthEndpoints
         group.MapPost("/refresh", Refresh);
         group.MapPost("/logout", Logout);
         group.MapGet("/me", Me).RequireAuthorization();
+        group.MapPatch("/password", ChangePassword).RequireAuthorization();
+        group.MapPatch("/profile", UpdateProfile).RequireAuthorization();
 
         return app;
     }
@@ -144,5 +146,45 @@ public static class AuthEndpoints
             new(u.Id, u.Email, u.Name, u.Role),
             membership?.CompanyId
         )));
+    }
+
+    // ── PATCH /api/auth/password ──────────────────────────────────────────────────
+
+    static async Task<IResult> ChangePassword(
+        ChangePasswordRequest req, ProhubDbContext db, AuthService auth, ClaimsPrincipal user)
+    {
+        if (string.IsNullOrWhiteSpace(req.CurrentPassword) || string.IsNullOrWhiteSpace(req.NewPassword))
+            return Results.BadRequest(ApiResponse.Fail("Both passwords are required."));
+        if (req.NewPassword.Length < 8)
+            return Results.BadRequest(ApiResponse.Fail("New password must be at least 8 characters."));
+
+        var userId = Guid.Parse(user.FindFirstValue(JwtRegisteredClaimNames.Sub)!);
+        var u = await db.Users.FindAsync(userId);
+        if (u is null) return Results.Unauthorized();
+
+        if (!auth.VerifyPassword(req.CurrentPassword, u.PasswordHash))
+            return Results.BadRequest(ApiResponse.Fail("Current password is incorrect."));
+
+        u.PasswordHash = auth.HashPassword(req.NewPassword);
+        u.UpdatedAtUtc = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+
+        return Results.Ok(ApiResponse.Success());
+    }
+
+    // ── PATCH /api/auth/profile ───────────────────────────────────────────────────
+
+    static async Task<IResult> UpdateProfile(
+        UpdateProfileRequest req, ProhubDbContext db, ClaimsPrincipal user)
+    {
+        if (string.IsNullOrWhiteSpace(req.Name))
+            return Results.BadRequest(ApiResponse.Fail("Name is required."));
+        var userId = Guid.Parse(user.FindFirstValue(JwtRegisteredClaimNames.Sub)!);
+        var u = await db.Users.FindAsync(userId);
+        if (u is null) return Results.Unauthorized();
+        u.Name = req.Name.Trim();
+        u.UpdatedAtUtc = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+        return Results.Ok(ApiResponse.Success());
     }
 }

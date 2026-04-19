@@ -5,6 +5,7 @@ import { integrationsApi } from '../api/integrations';
 import { tagsApi } from '../api/tags';
 import { linksApi } from '../api/links';
 import { projectsApi } from '../api/projects';
+import { useToast } from '../context/ToastContext';
 import type {
   Project, StatusEntry, ContextDoc, IntegrationLink, Tag, ProjectLink
 } from '../api/types';
@@ -19,14 +20,18 @@ const STATUSES = ['active', 'in-progress', 'planning', 'blocked', 'paused', 'com
 
 interface Props {
   projectId: string;
-  companyId: string; // reserved for multi-tenant filtering when auth is added
+  companyId: string;
+  onBack?: () => void;
 }
 
-export function ProjectDetailPage({ projectId, companyId: _companyId }: Props) {
+export function ProjectDetailPage({ projectId, companyId: _companyId, onBack }: Props) {
   const [project, setProject] = useState<Project | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>('Timeline');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const { success, error: toastError } = useToast();
 
   useEffect(() => {
     setLoading(true);
@@ -36,6 +41,16 @@ export function ProjectDetailPage({ projectId, companyId: _companyId }: Props) {
       setLoading(false);
     });
   }, [projectId]);
+
+  async function handleDelete() {
+    const res = await projectsApi.delete(projectId);
+    if (res.ok) {
+      success('Project deleted.');
+      onBack?.();
+    } else {
+      toastError(res.error ?? 'Failed to delete project.');
+    }
+  }
 
   if (loading) return <div className="page"><div className="skeleton-card" /></div>;
   if (error || !project) return <div className="page"><div className="alert-error">{error}</div></div>;
@@ -49,6 +64,17 @@ export function ProjectDetailPage({ projectId, companyId: _companyId }: Props) {
             <StatusBadge status={project.status} />
             <span className="card-slug">{project.slug}</span>
           </div>
+        </div>
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <button className="btn-secondary" onClick={() => setEditOpen(true)}>Edit</button>
+          {!deleteConfirm ? (
+            <button className="btn-ghost" onClick={() => setDeleteConfirm(true)}>Delete</button>
+          ) : (
+            <>
+              <button className="btn-danger" onClick={handleDelete}>Confirm Delete</button>
+              <button className="btn-ghost" onClick={() => setDeleteConfirm(false)}>Cancel</button>
+            </>
+          )}
         </div>
       </div>
 
@@ -70,6 +96,93 @@ export function ProjectDetailPage({ projectId, companyId: _companyId }: Props) {
         {activeTab === 'Integrations' && <IntegrationsTab projectId={projectId} />}
         {activeTab === 'Tags' && <TagsTab projectId={projectId} />}
         {activeTab === 'Links' && <LinksTab projectId={projectId} />}
+      </div>
+
+      {editOpen && (
+        <EditProjectModal
+          project={project}
+          onClose={() => setEditOpen(false)}
+          onSaved={updated => { setProject(updated); setEditOpen(false); success('Project updated.'); }}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ── Edit Project Modal ───────────────────────────────────────────────────────── */
+
+function EditProjectModal({
+  project,
+  onClose,
+  onSaved,
+}: {
+  project: Project;
+  onClose: () => void;
+  onSaved: (updated: Project) => void;
+}) {
+  const [name, setName] = useState(project.name);
+  const [description, setDescription] = useState(project.description ?? '');
+  const [status, setStatus] = useState(project.status);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!name.trim()) { setError('Name is required.'); return; }
+    setSaving(true);
+    setError(null);
+    const res = await projectsApi.update(project.id, {
+      name: name.trim(),
+      description: description.trim() || undefined,
+      status,
+    });
+    if (res.ok && res.data) onSaved(res.data);
+    else setError(res.error ?? 'Failed to save.');
+    setSaving(false);
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <h2 className="modal-title">Edit Project</h2>
+          <button className="modal-close" onClick={onClose}>X</button>
+        </div>
+        <form onSubmit={handleSubmit} className="modal-form">
+          {error && <div className="alert-error">{error}</div>}
+          <label className="field">
+            <span className="field-label">Name *</span>
+            <input
+              className="input"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              placeholder="My App"
+              autoFocus
+            />
+          </label>
+          <label className="field">
+            <span className="field-label">Description</span>
+            <textarea
+              className="input textarea"
+              value={description}
+              onChange={e => setDescription(e.target.value)}
+              placeholder="What is this project?"
+              rows={3}
+            />
+          </label>
+          <label className="field">
+            <span className="field-label">Status</span>
+            <select className="input" value={status} onChange={e => setStatus(e.target.value)}>
+              {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </label>
+          <div className="modal-footer">
+            <button type="button" className="btn-ghost" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn-primary" disabled={saving}>
+              {saving ? 'Saving...' : 'Save Changes'}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );

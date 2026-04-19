@@ -41,6 +41,7 @@ export function Layout({ children, activePage, onNavigate, breadcrumbs }: Layout
         <div className="sidebar-footer">
           {user && (
             <div className="sidebar-user">
+              <div className="sidebar-user-avatar">{user.name?.[0]?.toUpperCase() ?? 'U'}</div>
               <div className="sidebar-user-info">
                 <span className="sidebar-user-name">{user.name}</span>
                 <span className="sidebar-user-email">{user.email}</span>

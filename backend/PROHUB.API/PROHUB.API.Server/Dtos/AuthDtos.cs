@@ -19,3 +19,6 @@ public record RefreshResponse(
     string RefreshToken,
     DateTime ExpiresAt
 );
+
+public record ChangePasswordRequest(string CurrentPassword, string NewPassword);
+public record UpdateProfileRequest(string Name);

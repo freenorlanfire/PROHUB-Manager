@@ -1,3 +1,4 @@
+import { api } from './client';
 import type { ApiEnvelope } from './client';
 
 export interface AuthUser {
@@ -37,4 +38,10 @@ export const authApi = {
 
   logout: (refreshToken: string, token: string) =>
     post<null>('/auth/logout', { refreshToken }, token),
+
+  changePassword: (body: { currentPassword: string; newPassword: string }) =>
+    api.patch<null>('/auth/password', body),
+
+  updateProfile: (body: { name: string }) =>
+    api.patch<null>('/auth/profile', body),
 };
