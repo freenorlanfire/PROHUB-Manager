@@ -154,6 +154,22 @@ else
 
 builder.Services.AddProblemDetails();
 
+// ── Memory Cache (for trends caching) ────────────────────────────────────────
+builder.Services.AddMemoryCache();
+
+// ── HTTP Clients ──────────────────────────────────────────────────────────────
+builder.Services.AddHttpClient<TrendsService>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(15);
+    client.DefaultRequestHeaders.Add("User-Agent", "PROHUB-Manager/1.0");
+});
+
+builder.Services.AddHttpClient<AiService>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(60);
+    client.DefaultRequestHeaders.Add("User-Agent", "PROHUB-Manager/1.0");
+});
+
 // ─────────────────────────────────────────────────────────────────────────────────
 var app = builder.Build();
 // ─────────────────────────────────────────────────────────────────────────────────
@@ -250,6 +266,7 @@ app.MapContextDocEndpoints();
 app.MapIntegrationEndpoints();
 app.MapTagEndpoints();
 app.MapLinkEndpoints();
+app.MapTrendsEndpoints();
 
 // ── Aspire probes (/alive) ────────────────────────────────────────────────────────
 app.MapDefaultEndpoints();

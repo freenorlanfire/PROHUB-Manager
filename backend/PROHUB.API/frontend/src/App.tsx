@@ -6,13 +6,15 @@ import { CompaniesPage } from './pages/CompaniesPage';
 import { ProjectsPage } from './pages/ProjectsPage';
 import { ProjectDetailPage } from './pages/ProjectDetailPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { MejorasPage } from './pages/MejorasPage';
 import './App.css';
 
 type Route =
   | { page: 'companies' }
   | { page: 'projects'; companyId: string; companyName: string }
   | { page: 'project-detail'; projectId: string; projectName: string; companyId: string; companyName: string }
-  | { page: 'settings' };
+  | { page: 'settings' }
+  | { page: 'mejoras'; projectId?: string; projectName?: string };
 
 function AppRoutes() {
   const [route, setRoute] = useState<Route>({ page: 'companies' });
@@ -25,14 +27,25 @@ function AppRoutes() {
     setRoute({ page: 'project-detail', projectId, projectName, companyId, companyName });
   }
   function navSettings() { setRoute({ page: 'settings' }); }
+  function navMejoras(projectId?: string, projectName?: string) {
+    setRoute({ page: 'mejoras', projectId, projectName });
+  }
 
-  const activePage = route.page === 'settings' ? 'settings' : 'companies';
+  const activePage =
+    route.page === 'settings' ? 'settings' :
+    route.page === 'mejoras'  ? 'mejoras'  :
+    'companies';
+
   const breadcrumbs = buildBreadcrumbs(route, navCompanies, navProjects);
 
   return (
     <Layout
       activePage={activePage}
-      onNavigate={p => p === 'settings' ? navSettings() : navCompanies()}
+      onNavigate={p =>
+        p === 'settings' ? navSettings() :
+        p === 'mejoras'  ? navMejoras()  :
+        navCompanies()
+      }
       breadcrumbs={breadcrumbs}
     >
       {route.page === 'companies' && (
@@ -52,9 +65,13 @@ function AppRoutes() {
           projectId={route.projectId}
           companyId={route.companyId}
           onBack={() => navProjects(route.companyId, route.companyName)}
+          onMejoras={() => navMejoras(route.projectId, route.projectName)}
         />
       )}
       {route.page === 'settings' && <SettingsPage />}
+      {route.page === 'mejoras' && (
+        <MejorasPage projectId={route.projectId} projectName={route.projectName} />
+      )}
     </Layout>
   );
 }
@@ -96,6 +113,8 @@ function buildBreadcrumbs(
       ];
     case 'settings':
       return [{ label: 'Settings' }];
+    case 'mejoras':
+      return [{ label: '⚡ Mejoras' }];
     default:
       return [];
   }

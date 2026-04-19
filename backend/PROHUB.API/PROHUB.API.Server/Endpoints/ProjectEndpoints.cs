@@ -3,6 +3,7 @@ using PROHUB.API.Server.Common;
 using PROHUB.API.Server.Data;
 using PROHUB.API.Server.Dtos;
 using PROHUB.API.Server.Entities;
+using PROHUB.API.Server.Services;
 
 namespace PROHUB.API.Server.Endpoints;
 
@@ -20,6 +21,7 @@ public static class ProjectEndpoints
         group.MapPut("/{id:guid}", UpdateProject);
         group.MapDelete("/{id:guid}", DeleteProject);
         group.MapPost("/{id:guid}/archive", ArchiveProject);
+        group.MapPost("/{id:guid}/ai-analyze", AiAnalyze);
 
         return app;
     }
@@ -124,6 +126,34 @@ public static class ProjectEndpoints
         await db.SaveChangesAsync();
 
         return Results.Ok(ApiResponse<ProjectDto>.Success(ToDto(p)));
+    }
+
+    static async Task<IResult> AiAnalyze(Guid id, ProhubDbContext db, AiService ai, CancellationToken ct)
+    {
+        var p = await db.Projects.FirstOrDefaultAsync(x => x.Id == id && !x.IsDeleted, ct);
+        if (p is null) return Results.NotFound(ApiResponse.Fail(AppErrors.NotFound("Project")));
+
+        var tags = await db.ProjectTags
+            .Where(t => t.ProjectId == id)
+            .Select(t => t.Tag)
+            .ToArrayAsync(ct);
+
+        var doc = await db.ContextDocs.FirstOrDefaultAsync(d => d.ProjectId == id, ct);
+
+        var recentNotes = await db.ProjectStatusEntries
+            .Where(e => e.ProjectId == id)
+            .OrderByDescending(e => e.CreatedAtUtc)
+            .Take(5)
+            .Select(e => e.Note ?? "")
+            .ToListAsync(ct);
+
+        var analysis = await ai.AnalyzeProjectAsync(
+            p.Name, p.Description, p.Status,
+            tags, doc?.Content ?? "",
+            recentNotes.Where(n => !string.IsNullOrWhiteSpace(n)).ToList(),
+            ct);
+
+        return Results.Ok(ApiResponse<object>.Success(new { analysis }));
     }
 
     static ProjectDto ToDto(Project p) => new(

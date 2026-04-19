@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { useAuth } from '../context/AuthContext';
 
-type NavPage = 'companies' | 'settings';
+type NavPage = 'companies' | 'mejoras' | 'settings';
 
 interface LayoutProps {
   children: ReactNode;
@@ -28,6 +28,13 @@ export function Layout({ children, activePage, onNavigate, breadcrumbs }: Layout
           >
             <IconBuilding />
             Companies
+          </button>
+          <button
+            className={`sidebar-item ${activePage === 'mejoras' ? 'active' : ''}`}
+            onClick={() => onNavigate('mejoras')}
+          >
+            <IconZap />
+            Mejoras
           </button>
           <button
             className={`sidebar-item ${activePage === 'settings' ? 'active' : ''}`}
@@ -90,6 +97,14 @@ function IconBuilding() {
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <rect x="3" y="3" width="18" height="18" rx="1"/>
       <path d="M9 3v18M15 3v18M3 9h18M3 15h18"/>
+    </svg>
+  );
+}
+
+function IconZap() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
     </svg>
   );
 }

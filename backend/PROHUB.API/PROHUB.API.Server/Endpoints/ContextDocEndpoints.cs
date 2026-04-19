@@ -3,6 +3,7 @@ using PROHUB.API.Server.Common;
 using PROHUB.API.Server.Data;
 using PROHUB.API.Server.Dtos;
 using PROHUB.API.Server.Entities;
+using PROHUB.API.Server.Services;
 
 namespace PROHUB.API.Server.Endpoints;
 
@@ -17,6 +18,7 @@ public static class ContextDocEndpoints
         group.MapGet("/", GetDoc);
         group.MapPut("/", SaveDoc);
         group.MapGet("/versions", GetVersions);
+        group.MapPost("/ai-enhance", AiEnhance);
 
         return app;
     }
@@ -105,5 +107,44 @@ public static class ContextDocEndpoints
             .ToListAsync();
 
         return Results.Ok(ApiResponse<List<ContextDocVersionDto>>.Success(versions));
+    }
+
+    // ── POST /api/projects/{projectId}/context-doc/ai-enhance ─────────────────
+
+    static async Task<IResult> AiEnhance(
+        Guid projectId,
+        AiEnhanceRequest req,
+        ProhubDbContext db,
+        AiService ai,
+        CancellationToken ct)
+    {
+        var project = await db.Projects.FirstOrDefaultAsync(p => p.Id == projectId && !p.IsDeleted, ct);
+        if (project is null)
+            return Results.NotFound(ApiResponse.Fail(AppErrors.NotFound("Project")));
+
+        var tags = await db.ProjectTags
+            .Where(t => t.ProjectId == projectId)
+            .Select(t => t.Tag)
+            .ToArrayAsync(ct);
+
+        var integrationTypes = await db.IntegrationLinks
+            .Where(i => i.ProjectId == projectId)
+            .Select(i => i.Type)
+            .ToArrayAsync(ct);
+
+        var doc = await db.ContextDocs.FirstOrDefaultAsync(d => d.ProjectId == projectId, ct);
+        var existingContent = doc?.Content ?? "";
+
+        var result = await ai.EnhanceContextDocAsync(
+            project.Name,
+            project.Description,
+            project.Status,
+            tags,
+            integrationTypes,
+            existingContent,
+            req.ExtraInstructions,
+            ct);
+
+        return Results.Ok(ApiResponse<AiEnhanceResponse>.Success(result));
     }
 }

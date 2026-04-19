@@ -5,13 +5,14 @@ import { integrationsApi } from '../api/integrations';
 import { tagsApi } from '../api/tags';
 import { linksApi } from '../api/links';
 import { projectsApi } from '../api/projects';
+import { aiApi } from '../api/trends';
 import { useToast } from '../context/ToastContext';
 import type {
   Project, StatusEntry, ContextDoc, IntegrationLink, Tag, ProjectLink
 } from '../api/types';
 import { StatusBadge } from './ProjectsPage';
 
-const TABS = ['Timeline', 'Context Doc', 'Integrations', 'Tags', 'Links'] as const;
+const TABS = ['Timeline', 'Context Doc', 'Integrations', 'Tags', 'Links', 'AI Analysis'] as const;
 type Tab = (typeof TABS)[number];
 
 const INTEGRATION_TYPES = ['repo', 'ci', 'staging', 'prod', 'docs'] as const;
@@ -22,9 +23,10 @@ interface Props {
   projectId: string;
   companyId: string;
   onBack?: () => void;
+  onMejoras?: () => void;
 }
 
-export function ProjectDetailPage({ projectId, companyId: _companyId, onBack }: Props) {
+export function ProjectDetailPage({ projectId, companyId: _companyId, onBack, onMejoras }: Props) {
   const [project, setProject] = useState<Project | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>('Timeline');
   const [loading, setLoading] = useState(true);
@@ -66,6 +68,11 @@ export function ProjectDetailPage({ projectId, companyId: _companyId, onBack }: 
           </div>
         </div>
         <div style={{ display: 'flex', gap: '0.5rem' }}>
+          {onMejoras && (
+            <button className="btn-ai" onClick={onMejoras} title="View tech trends for this project">
+              ⚡ Mejoras
+            </button>
+          )}
           <button className="btn-secondary" onClick={() => setEditOpen(true)}>Edit</button>
           {!deleteConfirm ? (
             <button className="btn-ghost" onClick={() => setDeleteConfirm(true)}>Delete</button>
@@ -96,6 +103,7 @@ export function ProjectDetailPage({ projectId, companyId: _companyId, onBack }: 
         {activeTab === 'Integrations' && <IntegrationsTab projectId={projectId} />}
         {activeTab === 'Tags' && <TagsTab projectId={projectId} />}
         {activeTab === 'Links' && <LinksTab projectId={projectId} />}
+        {activeTab === 'AI Analysis' && <AiAnalysisTab projectId={projectId} projectName={project.name} />}
       </div>
 
       {editOpen && (
@@ -286,6 +294,9 @@ function ContextDocTab({ projectId }: { projectId: string }) {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [enhancing, setEnhancing] = useState(false);
+  const [extraInstructions, setExtraInstructions] = useState('');
+  const [showEnhancePanel, setShowEnhancePanel] = useState(false);
 
   useEffect(() => {
     contextDocApi.get(projectId).then(res => {
@@ -303,6 +314,20 @@ function ContextDocTab({ projectId }: { projectId: string }) {
     setSaving(false);
   }
 
+  async function handleAiEnhance() {
+    setEnhancing(true);
+    setErr(null);
+    const res = await aiApi.enhanceContextDoc(projectId, extraInstructions || undefined);
+    if (res.ok && res.data) {
+      setContent(res.data.content);
+      setShowEnhancePanel(false);
+      setExtraInstructions('');
+    } else {
+      setErr(res.error ?? 'AI enhance failed.');
+    }
+    setEnhancing(false);
+  }
+
   if (loading) return <div className="skeleton-card" />;
 
   return (
@@ -316,12 +341,45 @@ function ContextDocTab({ projectId }: { projectId: string }) {
           {doc?.updatedAtUtc && (
             <span className="field-label">Last saved: {fmtDateTime(doc.updatedAtUtc)}</span>
           )}
-          {saved && <span className="save-confirm">Saved</span>}
+          {saved && <span className="save-confirm">✓ Saved</span>}
+          <button
+            className="btn-ai"
+            onClick={() => setShowEnhancePanel(p => !p)}
+            disabled={enhancing}
+            title="Let AI enhance this doc"
+          >
+            ✦ AI Enhance
+          </button>
           <button className="btn-primary" onClick={handleSave} disabled={saving}>
             {saving ? 'Saving...' : 'Save Version'}
           </button>
         </div>
       </div>
+
+      {showEnhancePanel && (
+        <div className="ai-panel">
+          <div className="ai-panel-header">
+            <span className="ai-panel-title">✦ AI Context Doc Enhancement</span>
+            <span className="ai-panel-sub">Claude will analyze your project data and generate/improve the context doc.</span>
+          </div>
+          <label className="field">
+            <span className="field-label">Extra instructions (optional)</span>
+            <input
+              className="input"
+              value={extraInstructions}
+              onChange={e => setExtraInstructions(e.target.value)}
+              placeholder="Focus on the deployment pipeline, add more about the API design..."
+            />
+          </label>
+          <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+            <button className="btn-ghost" onClick={() => setShowEnhancePanel(false)}>Cancel</button>
+            <button className="btn-ai" onClick={handleAiEnhance} disabled={enhancing}>
+              {enhancing ? '✦ Generating...' : '✦ Generate with AI'}
+            </button>
+          </div>
+        </div>
+      )}
+
       {err && <div className="alert-error">{err}</div>}
       {preview ? (
         <div className="doc-preview panel" dangerouslySetInnerHTML={{ __html: renderMd(content) }} />
@@ -330,7 +388,7 @@ function ContextDocTab({ projectId }: { projectId: string }) {
           className="input doc-editor"
           value={content}
           onChange={e => setContent(e.target.value)}
-          placeholder="# Project Context&#10;&#10;Write markdown here..."
+          placeholder="# Project Context&#10;&#10;Write markdown here... or use ✦ AI Enhance above"
           spellCheck={false}
         />
       )}
@@ -525,6 +583,73 @@ function LinksTab({ projectId }: { projectId: string }) {
             <button className="btn-ghost btn-sm" onClick={() => handleDelete(l.id)}>Delete</button>
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+/* ── AI Analysis tab ──────────────────────────────────────────────────────────── */
+
+function AiAnalysisTab({ projectId, projectName }: { projectId: string; projectName: string }) {
+  const [analysis, setAnalysis] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function runAnalysis() {
+    setLoading(true);
+    setErr(null);
+    const res = await aiApi.analyzeProject(projectId);
+    if (res.ok && res.data) setAnalysis(res.data.analysis);
+    else setErr(res.error ?? 'Analysis failed.');
+    setLoading(false);
+  }
+
+  return (
+    <div className="tab-section">
+      <div className="panel ai-analysis-panel">
+        <div className="ai-analysis-header">
+          <div>
+            <h3 className="panel-title">✦ AI Project Analysis</h3>
+            <p className="field-label" style={{ marginTop: '0.25rem' }}>
+              Claude analyzes your project data — status history, context doc, tags — and provides actionable insights.
+            </p>
+          </div>
+          <button className="btn-ai" onClick={runAnalysis} disabled={loading}>
+            {loading ? '✦ Analyzing...' : '✦ Run Analysis'}
+          </button>
+        </div>
+
+        {err && <div className="alert-error" style={{ marginTop: '1rem' }}>{err}</div>}
+
+        {loading && (
+          <div className="ai-thinking">
+            <div className="ai-thinking-dots">
+              <span />
+              <span />
+              <span />
+            </div>
+            <span className="ai-thinking-text">Analyzing {projectName}...</span>
+          </div>
+        )}
+
+        {analysis && !loading && (
+          <div className="ai-result">
+            <div className="ai-result-header">
+              <span className="ai-result-badge">✦ AI Insights</span>
+            </div>
+            <div
+              className="ai-result-content"
+              dangerouslySetInnerHTML={{ __html: renderMd(analysis) }}
+            />
+          </div>
+        )}
+
+        {!analysis && !loading && !err && (
+          <div className="empty-state" style={{ marginTop: '2rem' }}>
+            <p className="empty-title">Ready to analyze</p>
+            <p className="empty-sub">Click "Run Analysis" to get AI insights on this project.</p>
+          </div>
+        )}
       </div>
     </div>
   );
